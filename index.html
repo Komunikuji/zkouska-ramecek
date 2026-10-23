@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sonda</title>
+<style>
+body{margin:0;padding:12px;font:15px/1.4 system-ui,-apple-system,sans-serif;background:#fff;color:#1d1a22}
+button{display:block;width:100%;font:inherit;font-weight:600;padding:12px;margin:6px 0;border:1px solid #c9c2cf;border-radius:10px;background:#f7f4f8;color:inherit}
+table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
+td{padding:4px 6px;border-bottom:1px solid #eee;vertical-align:top;overflow-wrap:anywhere}
+td:first-child{color:#5f5866;width:45%}
+.ok{color:#0f766e;font-weight:700}.no{color:#9a3412;font-weight:700}
+#bar{height:14px;background:#eee;border-radius:7px;overflow:hidden;margin:4px 0}#lvl{height:100%;width:0;background:#0f766e}
+</style></head><body>
+<button id="b-pohyb">1. Pohyb (náklon, zatřesení)</button>
+<button id="b-mik">2. Mikrofon (foukni)</button>
+<div id="bar"><div id="lvl"></div></div>
+<button id="b-zvuk">3. Zvuk po ťuknutí</button>
+<table id="out"></table>
+<script>
+// Zkušební stránka bez dat: sondy na pohyb, mikrofon a zvuk v rámečku z jiné domény.
+function put(k, v, good) { var t = document.getElementById('out'), id = 'r-' + k.replace(/\W/g, '_'), r = document.getElementById(id);
+  if (!r) { r = t.insertRow(); r.id = id; r.insertCell(); r.insertCell(); }
+  r.cells[0].textContent = k; r.cells[1].textContent = String(v);
+  r.cells[1].className = good === true ? 'ok' : good === false ? 'no' : ''; }
+put('origin', self.origin);
+put('v rámečku', window.top !== window);
+
+var mot = 0, ori = 0;
+addEventListener('devicemotion', function (e) { mot++; var a = e.accelerationIncludingGravity || {};
+  put('devicemotion', mot + ' událostí, x=' + (a.x == null ? '–' : a.x.toFixed(1)), a.x != null); });
+addEventListener('deviceorientation', function (e) { ori++;
+  put('deviceorientation', ori + ' událostí, náklon=' + (e.beta == null ? '–' : e.beta.toFixed(0)), e.beta != null); });
+
+document.getElementById('b-pohyb').onclick = function () {
+  var D = window.DeviceMotionEvent;
+  if (D && typeof D.requestPermission === 'function') {
+    D.requestPermission().then(function (s) { put('povolení pohybu (iPhone)', s, s === 'granted'); },
+      function (e) { put('povolení pohybu (iPhone)', e.name + ': ' + e.message, false); });
+    if (window.DeviceOrientationEvent && DeviceOrientationEvent.requestPermission) DeviceOrientationEvent.requestPermission().catch(function () {});
+  } else put('povolení pohybu', 'prohlížeč se neptá');
+  setTimeout(function () { if (!mot) put('devicemotion', 'zatím žádná událost', false); }, 3000);
+};
+document.getElementById('b-mik').onclick = function () {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { put('mikrofon', 'API chybí', false); return; }
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(function (s) {
+    put('mikrofon', 'povolen, sám se vypne za 15 s', true);
+    var C = window.AudioContext || window.webkitAudioContext, c = new C(), an = c.createAnalyser(), d = new Uint8Array(an.fftSize), konec = false;
+    c.createMediaStreamSource(s).connect(an);
+    (function loop() { if (konec) return; an.getByteTimeDomainData(d); var m = 0; for (var i = 0; i < d.length; i++) m = Math.max(m, Math.abs(d[i] - 128));
+      document.getElementById('lvl').style.width = Math.min(100, m / 1.28) + '%'; requestAnimationFrame(loop); })();
+    // Mikrofon po zkoušce sám vypnout, ať nezůstane běžet.
+    setTimeout(function () { konec = true; s.getTracks().forEach(function (t) { t.stop(); }); c.close(); put('mikrofon', 'povolen, už vypnutý', true); }, 15000);
+  }, function (e) { put('mikrofon', e.name + ': ' + e.message, false); });
+};
+document.getElementById('b-zvuk').onclick = function () {
+  try { var C = window.AudioContext || window.webkitAudioContext, c = new C(), o = c.createOscillator();
+    o.connect(c.destination); o.start(); o.stop(c.currentTime + 0.3);
+    if (c.resume) c.resume(); setTimeout(function () { put('zvuk', c.state, c.state === 'running'); }, 400); }
+  catch (e) { put('zvuk', e.name, false); }
+};
+</script></body></html>
